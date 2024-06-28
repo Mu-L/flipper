@@ -3,6 +3,9 @@ id: flipper-plugin
 title: Desktop Plugin API
 ---
 
+import {FbInternalOnly} from 'docusaurus-plugin-internaldocs-fb/internal';
+import Link from '@docusaurus/Link';
+
 `PluginClient` is the type of the `client` passed into a standard Sandy plugin.
 
 It takes two generic arguments:
@@ -311,7 +314,7 @@ client.addMenuEntry({
 }
 ```
 
-The `accelerator` argument is optional but describes the keyboard shortcut. See the [Electron docs](https://www.electronjs.org/docs/api/accelerator) for their format.
+The `accelerator` argument is optional but describes the keyboard shortcut.
 
 It is possible to leave out the `label`, and `accelerator` fields if a pre-defined `action` is set, which configures all three of them.
 The currently pre-defined actions are `"Clear"`, `"Go To Bottom"` and `"Create Paste"`.
@@ -341,6 +344,8 @@ Opens a different plugin by id, optionally providing a deeplink to bring the tar
 #### `supportsMethod`
 
 Usage: `client.supportsMethod(method: string): Promise<Boolean>`
+
+Method must be called within [onConnect](#onconnect), otherwise will throw error.
 
 Resolves to true if the client supports the specified method. Useful when adding functionality to existing plugins, when connectivity to older clients is still required. Also useful when client plugins are implemented on multiple platforms and don't all have feature parity.
 
@@ -586,6 +591,7 @@ Valid `options` are:
 * `key` - if a key is set, the given field of the records is assumed to be unique, and its value can be used to perform lookups and upserts.
 * `limit` - the maximum number of records that this DataSource will store. If the limit is exceeded, the oldest records will automatically be dropped to make place for the new ones. Defaults to 100.000 records.
 * `persist` - see the `createState` `persist` option: If set, this data source will automatically be part of Flipper imports / exports; it's recommended to set this option.
+* `indices` - If set, secondary indices will be maintained for this table that allows fast lookups. Indices is an array of keys with 1 or more items. See `getAllRecordsByIndex` for more details.
 
 All records stored in a data source should be treated as being immutable. To update a record, replace it with a new value using the `update` or `upsert` operations.
 
@@ -683,6 +689,41 @@ Usage: `clear()`. Removes all records from this data source.
 ##### getAdditionalView
 
 Usage: `getAdditionalView(viewId: string)`. Gets an additional `DataSourceView` of the `DataSource` by passing in an identifier `viewId`. If there already exists a `DataSourceView` with the `viewId`, we simply return that view instead.
+
+#### getAllRecordsByIndex
+
+Usage: `getAllRecordsByIndex({ indexedAttribute: value, indexAttribute2: value2, .... })`
+
+This method allows fast lookups for objects that match specific attributes exactly. 
+Returns all items matching the specified index query.
+Note that the results are unordered, unless
+records have not been updated using upsert / update, in that case
+insertion order is maintained.
+If no index has been specified for this exact keyset in the indexQuery (see options.indices), this method will throw.
+
+Example:
+
+```javascript
+const ds = createDataSource([eatCookie, drinkCoffee, submitBug], {
+  key: 'id',
+  indices: [
+    ['title']
+    ['id', 'title'],
+    ['title', 'done'],
+  ],
+});
+
+// Find first element with title === cookie (or undefined)
+const todo = ds.getFirstRecordByIndex({
+    title: 'cookie',
+})
+
+// Find all elements where title === cookie, and done === false
+const todos = ds.getAllRecordsByIndex({
+  title: 'cookie',
+  done: false,
+})
+```
 
 #### DataSourceView
 
@@ -912,6 +953,8 @@ function HighlightedText(props: {text: string}) {
 }
 ```
 
+### PowerSearch
+
 ### DataTable
 
 ### DataFormatter
@@ -937,6 +980,14 @@ function HighlightedText(props: {text: string}) {
 ### ElementsInspectorElement
 
 ### ElementsInspectorProps
+
+### TimelineDataDescription
+
+### dataTablePowerSearchOperators
+
+### MasterDetailLegacy
+
+### DataTableLegacy
 
 Coming soon
 
@@ -1088,6 +1139,10 @@ The colors exposed here support dark mode.
 
 ## Utilities
 
+### suggestNewPlugin
+
+Display a pop-up prompting users switch to a new plugin
+
 ### getFlipperLib
 
 A set of globally available utilities such as opening links, interacting with the clipboard (see the following example), and many more.
@@ -1125,6 +1180,7 @@ Valid options are:
 * `buildRow?: (rawData) => row` - a function that can be used to preprocess the incoming data before it is handed off to the table.
 * `renderSidebar?: (row) => React.Element` - a function that can be used to customize how the sidebar is rendered.
 
+### batched
 ### batch
 
 Usage: `batch(() => { /* state updates */ })`
@@ -1328,6 +1384,47 @@ Usage: `isAtom(value)`
 
 Checks if value is an [Atom](https://github.com/facebook/flipper/blob/566f7108c9efd8aefc8522af645bd0674fb91b20/desktop/flipper-plugin/src/state/atom.tsx#L30). Returns boolean.
 
+### reportPluginFailures
+
+Wraps a promise together with a description of the action that's performed and the name of the plugin
+to track success rates and duration of the actions. This is a no-op for the open-source version of Flipper
+as we do not collect any data from users.
+
+Example usage:
+
+```jsx
+import {reportPluginFailures} from 'flipper-plugin';	
+const lastCreatedBisect: PreviousBisects = await reportPluginFailures(
+  graphQLQuery(
+    `query MyQuery {
+      viewer {
+        data (first: 1) {
+          nodes {
+            id
+            date_created
+          }
+        }
+      }
+    }`,
+    60 * 1000,
+  ),
+  'queryMyQuery',
+  'myplugin',
+);
+```
+
+<FbInternalOnly>
+Refer to <Link to="/docs/fb/adding-analytics-0/">the fb-only documentation</Link> for adding analytics to your plugins.
+</FbInternalOnly>
+
+### tryCatchReportPluginFailures
+
+See above for [reportPluginFailures](#reportpluginfailures). This takes a callback and wraps it in a try/catch block instead of expecting a promise.
+
+### tryCatchReportPluginFailuresAsync
+
+Same as [tryCatchReportPluginFailures](#trycatchreportpluginfailures) but for async functions.
+
 ## TestUtils
 
 The object `TestUtils` as exposed from `flipper-plugin` exposes utilities to write unit tests for Sandy plugins.
@@ -1383,7 +1480,7 @@ The following members are only available for Client plugins:
 
 * `sendEvent(event, params)`: Emulates an event being sent by the client plugin. Will trigger the corresponding `onMessage` handler in the plugin.
 * `sendEvents({ method: string, params: object}[])`: Like `sendEvent`, but sends multiple events at once.
-* `onSend`: A `jest.fn()` that can be used to assert that `client.send()` was called by the plugin under test. For example, `expect(runner.onSend).toBeCalledWith('currentLogs`, { since: 0})`.
+* `onSend`: A `jest.fn()` that can be used to assert that `client.send()` was called by the plugin under test. For example, `expect(runner.onSend).toBeCalledWith('currentLogs', { since: 0})`.
 * `connect()`: Triggers the `onConnect()` event. (For non-background plugins `activate()` could as well be used for this).
 * `disconnect()`: Triggers the `onDisconnect()` event. (For non-background plugins `deactivate()` could as well be used for this).
 
