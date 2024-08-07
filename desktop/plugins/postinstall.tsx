@@ -19,6 +19,7 @@ const rootDir = path.resolve(__dirname, '..');
 const fbPluginsDir = path.join(__dirname, 'fb');
 
 async function postinstall(): Promise<number> {
+  console.log('* Looking up plugins');
   const [publicPackages, fbPackages, pluginsPackageJson] = await Promise.all([
     fs.readdir(publicPluginsDir),
     fs.readdir(fbPluginsDir).catch(() => [] as string[]),
@@ -92,15 +93,21 @@ async function postinstall(): Promise<number> {
     }
     return 1;
   }
-  await exec('yarn install --mutex network:30330', {
-    cwd: publicPluginsDir,
-  });
-  if (await fs.pathExists(fbPluginsDir)) {
-    await exec('yarn install --mutex network:30330', {
-      cwd: fbPluginsDir,
-    });
-  }
+  console.log("* Installing plugins' dependencies...");
+  await Promise.all([
+    exec('yarn install --mutex network:30330', {
+      cwd: publicPluginsDir,
+    }),
+    fs.pathExists(fbPluginsDir).then((exists) => {
+      if (exists) {
+        return exec('yarn install --mutex network:30330', {
+          cwd: fbPluginsDir,
+        });
+      }
+    }),
+  ]);
   const peerDependenciesArray = Object.keys(peerDependencies);
+  console.log('* Removing peer dependencies from node_modules...');
   await Promise.all([
     removeInstalledModules(modulesDir, peerDependenciesArray),
     removeInstalledModules(

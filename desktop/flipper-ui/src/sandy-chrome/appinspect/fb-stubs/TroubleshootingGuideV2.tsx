@@ -7,8 +7,9 @@
  * @format
  */
 
-module.exports = {
-  rules: {
-    'node/no-sync': 'off',
-  },
-};
+export function TroubleshootingGuideV2(_: {
+  open: boolean;
+  closeGuide: () => void;
+}) {
+  return null;
+}

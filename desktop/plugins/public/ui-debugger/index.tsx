@@ -55,7 +55,7 @@ export function plugin(client: PluginClient<Events, Methods>) {
   });
 
   const streamInterceptor = new EventEmitter() as StreamInterceptorEventEmitter;
-  addInterceptors(client.device.os, streamInterceptor);
+
   const snapshot = createState<SnapshotInfo | null>(null, {
     persist: 'snapshot',
   });
@@ -79,6 +79,7 @@ export function plugin(client: PluginClient<Events, Methods>) {
 
   const uiState: UIState = createUIState();
 
+  addInterceptors(client.device.os, streamInterceptor, uiState);
   //this is the client data is what drives all of desktop UI
   //it is always up-to-date with the client regardless of whether we are paused or not
   const mutableLiveClientData: LiveClientState = {
@@ -182,9 +183,13 @@ export function plugin(client: PluginClient<Events, Methods>) {
   };
 
   streamInterceptor.on('frameUpdated', (frame) => {
-    if (frame.frameTime > lastProcessedFrameTime.get()) {
+    if (frame.frameTime >= lastProcessedFrameTime.get()) {
       applyFrameData(frame.nodes, frame.snapshot);
       lastProcessedFrameTime.set(frame.frameTime);
+    } else {
+      console.debug(
+        `[ui-debugger] frameTime ${frame.frameTime} is older than lastProcessedFrameTime ${lastProcessedFrameTime.get()}... discarding`,
+      );
     }
   });
 

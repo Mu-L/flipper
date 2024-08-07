@@ -22,7 +22,8 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {useDispatch, useStore} from '../utils/useStore';
 import config from '../fb-stubs/config';
 import {currentUser, isConnected, logoutUser} from '../fb-stubs/user';
-import {Badge, Button, Menu, Modal} from 'antd';
+import {DIYConnectivityFix} from './DIYConnectivityFix';
+import {Badge, Button, Menu, Modal, Typography} from 'antd';
 import {
   BellOutlined,
   BugOutlined,
@@ -36,6 +37,7 @@ import {
   toggleLeftSidebarVisible,
   toggleRightSidebarVisible,
   toggleSettingsModal,
+  closeDiyConnectivityFixModal,
 } from '../reducers/application';
 import PluginManager from '../chrome/plugin-manager/PluginManager';
 import {showEmulatorLauncher} from './appinspect/LaunchEmulator';
@@ -43,7 +45,7 @@ import SetupDoctorScreen, {
   checkHasNewProblem,
   checkHasProblem,
 } from './SetupDoctorScreen';
-import {isProduction} from 'flipper-common';
+import {getLogger, isProduction} from 'flipper-common';
 import FpsGraph from '../chrome/FpsGraph';
 import NetworkGraph from '../chrome/NetworkGraph';
 import {errorCounterAtom} from '../chrome/ConsoleLogs';
@@ -53,11 +55,9 @@ import {
   ExportEverythingEverywhereAllAtOnceStatus,
   startFileImport,
   startFileExport,
-  startLinkExport,
 } from '../utils/exportData';
 import UpdateIndicator from '../chrome/UpdateIndicator';
 import {css} from '@emotion/css';
-import constants from '../fb-stubs/constants';
 import {setStaticView} from '../reducers/connections';
 import {StyleGuide} from './StyleGuide';
 import {openDeeplinkDialog} from '../deeplink';
@@ -69,7 +69,6 @@ import {
   NavbarScreenshotButton,
 } from '../chrome/ScreenCaptureButtons';
 import {StatusMessage} from './appinspect/AppInspect';
-import {TroubleshootingGuide} from './appinspect/fb-stubs/TroubleshootingGuide';
 import {FlipperDevTools} from '../chrome/FlipperDevTools';
 import {TroubleshootingHub} from '../chrome/TroubleshootingHub';
 import {Notification} from './notification/Notification';
@@ -79,8 +78,11 @@ import {showChangelog} from '../chrome/ChangelogSheet';
 import {FlipperSetupWizard} from '../chrome/FlipperSetupWizard';
 // eslint-disable-next-line no-restricted-imports
 import {ItemType} from 'antd/lib/menu/hooks/useItems';
+import {TroubleshootingGuideV2} from './appinspect/fb-stubs/TroubleshootingGuideV2';
 
 export const Navbar = withTrackingScope(function Navbar() {
+  const [troubleshootingGuideOpen, setTroubleshootingGuideOpen] =
+    useState(false);
   return (
     <Layout.Horizontal
       borderBottom
@@ -94,7 +96,12 @@ export const Navbar = withTrackingScope(function Navbar() {
       }}>
       <Layout.Horizontal style={{gap: 6}}>
         <LeftSidebarToggleButton />
-        <AppSelector />
+        <AppSelector
+          openTroubleShootingGuide={(source: string) => {
+            setTroubleshootingGuideOpen(true);
+            logTroubleShootGuideOpen(source);
+          }}
+        />
         <StatusMessage />
         <NavbarScreenshotButton />
         <NavbarScreenRecordButton />
@@ -110,7 +117,15 @@ export const Navbar = withTrackingScope(function Navbar() {
         <NoConnectivityWarning />
 
         <NotificationButton />
-        <TroubleshootMenu />
+        <TroubleshootMenu
+          troubleshootingGuideOpen={troubleshootingGuideOpen}
+          setTroubleshootingGuideOpen={(open) => {
+            setTroubleshootingGuideOpen(open);
+            if (open) {
+              logTroubleShootGuideOpen('troubleshoot-menu');
+            }
+          }}
+        />
         <SandyRatingButton />
         <ExtrasMenu />
         <RightSidebarToggleButton />
@@ -448,7 +463,13 @@ const submenu = css`
 const AlertsZIndex = 101;
 const TroubleShootZIndex = 100;
 
-function TroubleshootMenu() {
+function TroubleshootMenu({
+  troubleshootingGuideOpen,
+  setTroubleshootingGuideOpen,
+}: {
+  troubleshootingGuideOpen: boolean;
+  setTroubleshootingGuideOpen: (open: boolean) => void;
+}) {
   const store = useStore();
   const [status, setStatus] = useState<
     ExportEverythingEverywhereAllAtOnceStatus | undefined
@@ -521,14 +542,16 @@ function TroubleshootMenu() {
               <Badge dot={hasNewProblem}>Setup Doctor</Badge>
             </Menu.Item>
             <Menu.Item
-              key="connectivity"
+              key="TroubleshootingGuideV2"
               onClick={() => {
-                store.dispatch(toggleConnectivityModal());
+                setTroubleshootingGuideOpen(true);
               }}>
-              Troubleshoot Connectivity
+              Troubleshooting wizard
             </Menu.Item>
-            <TroubleshootingGuide />
-
+            <TroubleshootingGuideV2
+              open={troubleshootingGuideOpen}
+              closeGuide={() => setTroubleshootingGuideOpen(false)}
+            />
             <Menu.Item
               key="rage"
               onClick={exportEverythingEverywhereAllAtOnceTracked}>
@@ -542,6 +565,13 @@ function TroubleshootMenu() {
               <Layout.Horizontal center gap="small">
                 Flipper Logs <Badge count={flipperErrorLogCount} />
               </Layout.Horizontal>
+            </Menu.Item>
+            <Menu.Item
+              key="connectivity"
+              onClick={() => {
+                store.dispatch(toggleConnectivityModal());
+              }}>
+              Connectivity Logs
             </Menu.Item>
             <Menu.Item
               key="restart-idb"
@@ -580,6 +610,7 @@ function TroubleshootMenu() {
         onClose={() => setFlipperDevToolsModalOpen(false)}
       />
       <TroubleshootingModal />
+      <DIYConnectivityFixModal />
     </>
   );
 }
@@ -638,11 +669,6 @@ function ExtrasMenu() {
     () => startFileExport(store.dispatch),
     [store.dispatch],
   );
-  const startLinkExportTracked = useTrackedCallback(
-    'Link export',
-    () => startLinkExport(store.dispatch),
-    [store.dispatch],
-  );
   const startFileImportTracked = useTrackedCallback(
     'File import',
     () => startFileImport(store),
@@ -679,15 +705,6 @@ function ExtrasMenu() {
           label: 'Export Flipper file',
           onClick: startFileExportTracked,
         },
-        ...(constants.ENABLE_SHAREABLE_LINK
-          ? [
-              {
-                key: 'exportShareableLink',
-                label: 'Export shareable link',
-                onClick: startLinkExportTracked,
-              },
-            ]
-          : []),
         {
           type: 'divider',
         },
@@ -778,5 +795,34 @@ function ExtrasMenu() {
         onClose={() => setWelcomeVisible(false)}
       />
     </>
+  );
+}
+
+function logTroubleShootGuideOpen(source: string) {
+  getLogger().track('usage', 'troubleshooting-guide-v2-open', {
+    source,
+  });
+}
+
+function DIYConnectivityFixModal() {
+  const state = useStore((s) => s.application.diyConnectivityFixModal);
+  const dispatch = useDispatch();
+  if (!state.isOpen) {
+    return null;
+  }
+  return (
+    <Modal
+      onCancel={() => {
+        dispatch(closeDiyConnectivityFixModal());
+      }}
+      open
+      footer={null}>
+      <div>
+        <Typography.Title style={{marginBottom: 8}}>
+          Connecting to {state.app} has timed out.
+        </Typography.Title>
+        <DIYConnectivityFix os={state.os} mode="app-connectivity" />
+      </div>
+    </Modal>
   );
 }

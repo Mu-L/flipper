@@ -102,9 +102,11 @@ export function connectFlipperServerToStore(
         type: 'loading',
         app: client.appName,
         device: client.deviceName,
+        os: client.os,
         title: 'is attempting to connect...',
       },
       troubleshootConnection,
+      store.dispatch,
     );
   });
 
@@ -113,12 +115,14 @@ export function connectFlipperServerToStore(
       {
         key: buildGenericClientId(client),
         type,
+        os: client.os,
         app: client.appName,
         device: client.deviceName,
         title: 'failed to establish a connection',
         detail: message,
       },
       troubleshootConnection,
+      store.dispatch,
     );
   });
 
@@ -161,10 +165,12 @@ export function connectFlipperServerToStore(
         key: buildGenericClientId(client),
         type: 'info',
         app: client.appName,
+        os: client.os,
         device: client.deviceName,
         title: step,
       },
       troubleshootConnection,
+      store.dispatch,
     );
   });
 
@@ -182,9 +188,11 @@ export function connectFlipperServerToStore(
         type: 'success',
         app: payload.query.app,
         device: payload.query.device,
+        os: payload.query.os,
         title: 'successfully connected',
       },
       troubleshootConnection,
+      store.dispatch,
     );
   });
 
@@ -198,10 +206,12 @@ export function connectFlipperServerToStore(
           key: buildGenericClientIdFromQuery(existingClient.query),
           type: 'success-info',
           app: existingClient.query.app,
+          os: existingClient.query.os,
           device: existingClient.query.device,
           title: 'disconnected',
         },
         troubleshootConnection,
+        store.dispatch,
       );
     }
   });
@@ -356,7 +366,7 @@ export function handleDeviceConnected(
     .connections.devices.find((device) => device.serial === deviceInfo.serial);
   // handled outside reducer, as it might emit new redux actions...
   if (existing) {
-    if (existing.connected.get()) {
+    if (existing.connected.get() && process.env.NODE_ENV !== 'test') {
       console.warn(
         `Tried to replace still connected device '${existing.serial}' with a new instance.`,
       );
@@ -469,9 +479,11 @@ export async function handleClientConnected(
     });
   }
 
-  console.log(
-    `Searching matching device ${query.device_id} for client ${query.app}...`,
-  );
+  if (process.env.NODE_ENV !== 'test') {
+    console.log(
+      `Searching matching device ${query.device_id} for client ${query.app}...`,
+    );
+  }
   const device =
     getDeviceBySerial(store.getState(), query.device_id) ??
     (await findDeviceForConnection(store, query.app, query.device_id).catch(
@@ -532,7 +544,9 @@ export async function handleClientConnected(
       client.init(),
       `Failed to initialize client ${query.app} on ${query.device_id} in a timely manner`,
     );
-    console.log(`${query.app} on ${query.device_id} connected and ready.`);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log(`${query.app} on ${query.device_id} connected and ready.`);
+    }
   } catch (e) {
     if (e instanceof NoLongerConnectedToClientError) {
       console.warn(
